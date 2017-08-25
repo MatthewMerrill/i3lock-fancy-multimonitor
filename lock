@@ -20,7 +20,7 @@ WALLPAPER=$1
 
 INPUT_HASH=$(echo "$(xrandr):$LOCK:$TEXT:$WALLPAPER"|md5sum)
 
-if [[ "$INPUT_HASH" != "$(<hash.txt)" ]]; then
+if [[ "$INPUT_HASH" != "$(<$FOLDER/hash.txt)" ]]; then
   #Get dimensions of the lock image:
   LOCK_IMAGE_INFO=`identify $LOCK`
   [[ $LOCK_IMAGE_INFO =~ $IMAGE_RE ]]
