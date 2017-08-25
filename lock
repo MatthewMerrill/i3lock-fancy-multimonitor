@@ -8,52 +8,60 @@ BLURTYPE="2x8"
 
 DISPLAY_RE="([0-9]+)x([0-9]+)\\+([0-9]+)\\+([0-9]+)"
 IMAGE_RE="([0-9]+)x([0-9]+)"
+CANVAS_RE="current\\ ([0-9]+)\\ x\\ ([0-9]+)"
 FOLDER=`dirname "$BASH_SOURCE"`
-LOCK="$FOLDER/lock.png"
-TEXT="$FOLDER/text.png"
+TEXT="${2-$FOLDER/text.png}"
+LOCK="${3-$FOLDER/lock.png}"
 PARAMS=""
-OUTPUT_IMAGE="/tmp/i3lock.png"
+OUTPUT_IMAGE="$FOLDER/composite.png"
 
 #Take screenshot:
-scrot -z $OUTPUT_IMAGE
+WALLPAPER=$1
 
-#Get dimensions of the lock image:
-LOCK_IMAGE_INFO=`identify $LOCK`
-[[ $LOCK_IMAGE_INFO =~ $IMAGE_RE ]]
-IMAGE_WIDTH=${BASH_REMATCH[1]}
-IMAGE_HEIGHT=${BASH_REMATCH[2]}
+INPUT_HASH=$(echo "$(xrandr):$LOCK:$TEXT:$WALLPAPER"|md5sum)
 
-#Get dimensions of the text image:
-TEXT_IMAGE_INFO=`identify $TEXT`
-[[ $TEXT_IMAGE_INFO =~ $IMAGE_RE ]]
-TEXT_WIDTH=${BASH_REMATCH[1]}
-TEXT_HEIGHT=${BASH_REMATCH[2]}
+if [[ "$INPUT_HASH" != "$(<hash.txt)" ]]; then
+  #Get dimensions of the lock image:
+  LOCK_IMAGE_INFO=`identify $LOCK`
+  [[ $LOCK_IMAGE_INFO =~ $IMAGE_RE ]]
+  IMAGE_WIDTH=${BASH_REMATCH[1]}
+  IMAGE_HEIGHT=${BASH_REMATCH[2]}
 
-#Execute xrandr to get information about the monitors:
-while read LINE
-do
-  #If we are reading the line that contains the position information:
-  if [[ $LINE =~ $DISPLAY_RE ]]; then
-    #Extract information and append some parameters to the ones that will be given to ImageMagick:
-    WIDTH=${BASH_REMATCH[1]}
-    HEIGHT=${BASH_REMATCH[2]}
-    X=${BASH_REMATCH[3]}
-    Y=${BASH_REMATCH[4]}
-    POS_X=$(($X+$WIDTH/2-$IMAGE_WIDTH/2))
-    POS_Y=$(($Y+$HEIGHT/2-$IMAGE_HEIGHT/2))
-    TEXT_X=$(($X+$WIDTH/2-$TEXT_WIDTH/2))
-    TEXT_Y=$(($Y+$HEIGHT/2-$TEXT_HEIGHT/2+200))
+  #Get dimensions of the text image:
+  TEXT_IMAGE_INFO=`identify $TEXT`
+  [[ $TEXT_IMAGE_INFO =~ $IMAGE_RE ]]
+  TEXT_WIDTH=${BASH_REMATCH[1]}
+  TEXT_HEIGHT=${BASH_REMATCH[2]}
 
-    PARAMS="$PARAMS '$LOCK' '-geometry' '+$POS_X+$POS_Y' '-composite' '$TEXT' '-geometry' '+$TEXT_X+$TEXT_Y' '-composite'"
-  fi
-done <<<"`xrandr`"
+  #Execute xrandr to get information about the monitors:
+  while read LINE
+  do
+    #If we are reading the line that contains the canvas size information:
+    if [[ $LINE =~ $CANVAS_RE ]]; then
+      convert -size ${BASH_REMATCH[1]}x${BASH_REMATCH[2]} xc:none $OUTPUT_IMAGE
+    fi
 
-#Execute ImageMagick:
-PARAMS="'$OUTPUT_IMAGE' '-level' '0%,100%,0.6' '-blur' '$BLURTYPE' $PARAMS '$OUTPUT_IMAGE'"
-eval convert $PARAMS
+    #If we are reading the line that contains the position information:
+    if [[ $LINE =~ $DISPLAY_RE ]]; then
+      #Extract information and append some parameters to the ones that will be given to ImageMagick:
+      WIDTH=${BASH_REMATCH[1]}
+      HEIGHT=${BASH_REMATCH[2]}
+      X=${BASH_REMATCH[3]}
+      Y=${BASH_REMATCH[4]}
+      LOCK_X=$(($X+$WIDTH/2-$IMAGE_WIDTH/2))
+      LOCK_Y=$(($Y+$HEIGHT/2-$IMAGE_HEIGHT/2))
+      TEXT_X=$(($X+$WIDTH/2-$TEXT_WIDTH/2))
+      TEXT_Y=$(($Y+$HEIGHT/2-$TEXT_HEIGHT/2+200))
+
+      composite -geometry +$X+$Y \( $WALLPAPER -resize $(($WIDTH))x$(($HEIGHT))^ \) $OUTPUT_IMAGE $OUTPUT_IMAGE
+      composite -geometry +$LOCK_X+$LOCK_Y $LOCK $OUTPUT_IMAGE $OUTPUT_IMAGE
+      composite -geometry +$TEXT_X+$TEXT_Y $TEXT $OUTPUT_IMAGE $OUTPUT_IMAGE
+    fi
+  done <<<"`xrandr`"
+
+  printf "$INPUT_HASH" > $FOLDER/hash.txt
+fi
 
 #Lock the screen:
 i3lock -i $OUTPUT_IMAGE -t
 
-#Remove the generated image:
-rm $OUTPUT_IMAGE
